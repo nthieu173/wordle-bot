@@ -62,19 +62,21 @@ pub fn search(
                     let local_dict = (*arc_dict).clone();
                     let local_cache = (*arc_cache).clone();
                     let local_state_space_path = (*arc_state_space_path).clone();
-                    let state;
-                    if let Ok(()) = uncompress_state_space(&local_state_space_path, &local_solution)
+                    let mut state = StateSpace::new();
+                    if local_state_space_path
+                        .join(&format!("{}.zst", solution))
+                        .exists()
                     {
-                        if let Ok(s) = load_state_space_from_file(
-                            &local_state_space_path
-                                .join(&Path::new(&format!("{}.csv", local_solution))),
-                        ) {
-                            state = s;
-                        } else {
-                            state = StateSpace::new();
+                        if let Ok(()) =
+                            uncompress_state_space(&local_state_space_path, &local_solution)
+                        {
+                            if let Ok(s) = load_state_space_from_file(
+                                &local_state_space_path
+                                    .join(&Path::new(&format!("{}.csv", local_solution))),
+                            ) {
+                                state = s;
+                            }
                         }
-                    } else {
-                        state = StateSpace::new();
                     }
                     std::thread::spawn(move || {
                         let state = explore_one_solution(
