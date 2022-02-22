@@ -5,6 +5,7 @@ use std::{
     fs,
     io::{self, BufRead, Write},
     path::Path,
+    process,
     sync::Arc,
     thread,
 };
@@ -62,11 +63,16 @@ pub fn search(
                     let local_cache = (*arc_cache).clone();
                     let local_state_space_path = (*arc_state_space_path).clone();
                     let state;
-                    if let Ok(s) = load_state_space_from_file(
-                        &local_state_space_path
-                            .join(&Path::new(&format!("{}.csv", local_solution))),
-                    ) {
-                        state = s;
+                    if let Ok(()) = uncompress_state_space(&local_state_space_path, &local_solution)
+                    {
+                        if let Ok(s) = load_state_space_from_file(
+                            &local_state_space_path
+                                .join(&Path::new(&format!("{}.csv", local_solution))),
+                        ) {
+                            state = s;
+                        } else {
+                            state = StateSpace::new();
+                        }
                     } else {
                         state = StateSpace::new();
                     }
@@ -87,6 +93,7 @@ pub fn search(
                                 .join(Path::new(&format!("{}.csv", local_solution))),
                         )
                         .unwrap();
+                        compress_state_space(&local_state_space_path, &local_solution).unwrap();
                         state
                     })
                 })
@@ -120,6 +127,47 @@ fn save_state_space_to_file(state_space: &StateSpace, filename: &Path) -> io::Re
         )
         .unwrap();
     }
+    file.sync_all()?;
+    Ok(())
+}
+
+fn compress_state_space(state_space: &Path, solution: &str) -> io::Result<()> {
+    process::Command::new("tar")
+        .args([
+            "-c",
+            "-I",
+            "zstd",
+            "-f",
+            &state_space
+                .join(&format!("{}.zst", solution))
+                .to_str()
+                .unwrap(),
+            "-C",
+            &state_space.to_str().unwrap(),
+            &format!("{}.csv", solution),
+        ])
+        .spawn()?
+        .wait()?;
+    fs::remove_file(&state_space.join(&format!("{}.csv", solution)))?;
+    Ok(())
+}
+
+fn uncompress_state_space(state_space: &Path, solution: &str) -> io::Result<()> {
+    process::Command::new("tar")
+        .args([
+            "-x",
+            "-I",
+            "zstd",
+            "-f",
+            &state_space
+                .join(&format!("{}.zst", solution))
+                .to_str()
+                .unwrap(),
+            "-C",
+            &state_space.to_str().unwrap(),
+        ])
+        .spawn()?
+        .wait()?;
     Ok(())
 }
 
@@ -226,7 +274,7 @@ fn explore_one_solution(
             },
         );
     }
-    for i in 0..num_iterations {
+    for _ in 0..num_iterations {
         //println!("{} {}/{}", solution, i + 1, num_iterations);
         // One iteration of MCTS
         let mut sequence = vec![(root.guess.clone(), "".to_string())];
